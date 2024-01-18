@@ -49,6 +49,9 @@ strava_activities <- strava_activities1 %>%
 				 average_watts, prefer_perceived_exertion, calories, filename)
 glimpse(strava_activities)
 
+strava_activities %>%
+	count(distance_km)
+
 ### EDA with DataExplorer, explore, skimr
 
 ## DataExplorer summary of completes, missings
