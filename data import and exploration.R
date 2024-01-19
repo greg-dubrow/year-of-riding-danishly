@@ -43,7 +43,10 @@ strava_activities1 %>%
 ### clean data, redo as necessary after running basic EDA
 strava_activities <- strava_activities1 %>%
 	mutate(commute2 = ifelse(is.na(commute2) & commute == "FALSE", 0, commute2)) %>%
-	select(activity_id, activity_date:activity_type, activity_gear, commute_txt = commute,
+	## parse out date to month, date, year, day of week, time
+
+	select(activity_id, activity_date,
+				 activity_name:activity_type, activity_gear, commute_txt = commute,
 				 commute_n = commute2, distance_km = distance, distance_m = distance2, elapsed_time, moving_time,
 				 average_speed, average_elapsed_speed, max_speed, elevation_gain:elevation_high, average_grade, max_grade,
 				 average_watts, prefer_perceived_exertion, calories, filename)
