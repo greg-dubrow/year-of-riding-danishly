@@ -2,6 +2,7 @@
 # gpx files still in the zip archive. will import a few in another script to analyse
 # data dictionary https://stravametro.zendesk.com/hc/en-us/articles/1500001573281-Glossary-Data-Dictionary
 # api https://developers.strava.com/docs/reference/
+# data set produced here will be used to augment data produced in "01_data import via API"
 
 library(tidyverse) # to do tidyverse things
 library(tidylog) # to get a log of what's happening to the data
@@ -102,61 +103,6 @@ glimpse(strava_activities)
 
 saveRDS(strava_activities, file = "data/strava_activities.rds")
 
-
-### EDA with DataExplorer, explore, skimr
-strava_activities %>%
-	#	select() %>%
-	skim() %>%
-	view()
-
-strava_activities %>%
-	filter(is.na(filename)) %>%
-	glimpse()
-
-## DataExplorer summary of completes, missings
-eda1 <- introduce(strava_activities)
-view(eda1)
-
-## explorer summary
-strava_activities %>%
-	describe_tbl()
-
-## dataexplorer plots
-plot_bar(strava_activities)
-plot_histogram(strava_activities, nrow = 5L)
-
-## dataexplorer correlations
-strava_activities %>%
-	select(distance_km, elapsed_time, moving_time, max_speed, elevation_gain, elevation_loss, elevation_low,
-				 elevation_high, average_grade, max_grade, average_watts, calories) %>%
-	filter(!is.na(average_watts)) %>%
-	plot_correlation(maxcat = 5L, type = "continuous", geom_text_args = list("size" = 4))
-
-## dataexplorer scatterplots
-strava_activities_filter <- strava_activities %>%
-	select(distance_km, elapsed_time, moving_time, max_speed, elevation_gain, elevation_loss, elevation_low,
-				 elevation_high, average_grade, max_grade, average_watts, calories) %>%
-	filter(!is.na(average_watts))
-
-strava_activities_filter %>%
-	#	select() %>%
-	skim() %>%
-	view()
-
-plot_scatterplot(
-	strava_activities_filter,
-	by = "distance_km", nrow = 6L)
-
-## manual EDA
-strava_activities %>%
-	count(activity_type, activity_gear)
-
-strava_activities %>%
-	filter(is.na(activity_gear)) %>%
-	filter(activity_type == "Ride") %>%
-	count(activity_ymdhms_cet, distance_km)
-## explorer shiny app
-explore(DATA %>%
-					select())
+strava_activities <- readRDS(file = "data/strava_activities_from_csv.rds")
 
 ### continue with deeper analysis here or start new r script

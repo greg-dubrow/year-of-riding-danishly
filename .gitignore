@@ -4,5 +4,10 @@
 .Ruserdata
 .DS_Store
 .httr-oauth
-.rds
 .Rprofile
+stoken.R
+.httr-oauth
+ryanhart_strava_api.R
+post draft text
+strava_activities_from_csv.rds
+strava_activities.rds
