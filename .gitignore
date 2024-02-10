@@ -10,4 +10,4 @@ stoken.R
 ryanhart_strava_api.R
 post draft text
 strava_activities_from_csv.rds
-strava_activities.rds
+strava_activities_final.rds

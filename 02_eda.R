@@ -21,60 +21,63 @@ library(ggrepel) # helper functions for ggplot text
 
 # load data
 strava_data <- readRDS("data/strava_activities_final.rds")
+glimpse(strava_data)
+
+strava_data %>%
+	count(location_country, timezone, activity_year)
+
+strava_data %>%
+	count(location_country, activity_year)
+
+strava_data %>%
+	select(distance_km, kilojoules) %>%
+	ggplot(aes(kilojoules, distance_km)) +
+	geom_point()
 
 
 ### EDA with DataExplorer, explore, skimr
-strava_activities %>%
+strava_data %>%
 	#	select() %>%
 	skim() %>%
+	select(skim_variable, skim_type, n_missing, complete_rate, numeric.hist, numeric.mean:numeric.p75) %>%
+	arrange(desc(skim_type), complete_rate) %>%
 	view()
 
-strava_activities %>%
-	filter(is.na(filename)) %>%
-	glimpse()
-
 ## DataExplorer summary of completes, missings
-eda1 <- introduce(strava_activities)
+eda1 <- introduce(strava_data)
 view(eda1)
 
 ## explorer summary
-strava_activities %>%
+strava_data %>%
 	describe_tbl()
 
 ## dataexplorer plots
-plot_bar(strava_activities)
-plot_histogram(strava_activities, nrow = 5L)
+plot_bar(strava_data, nrow = 5L)
+plot_histogram(strava_data, nrow = 5L)
 
 ## dataexplorer correlations
-strava_activities %>%
-	select(distance_km, elapsed_time, moving_time, max_speed, elevation_gain, elevation_loss, elevation_low,
-				 elevation_high, average_grade, max_grade, average_watts, calories) %>%
+strava_data %>%
+	select(distance_km, elapsed_time, moving_time, max_speed, average_speed, elevation_gain, elevation_loss, elevation_low,
+				 elevation_high, average_grade, max_grade, average_watts, calories, kilojoules) %>%
 	filter(!is.na(average_watts)) %>%
+	filter(!is.na(calories)) %>%
 	plot_correlation(maxcat = 5L, type = "continuous", geom_text_args = list("size" = 4))
 
 ## dataexplorer scatterplots
-strava_activities_filter <- strava_activities %>%
-	select(distance_km, elapsed_time, moving_time, max_speed, elevation_gain, elevation_loss, elevation_low,
-				 elevation_high, average_grade, max_grade, average_watts, calories) %>%
-	filter(!is.na(average_watts))
+strava_data_filter <- strava_data %>%
+	select(distance_km, elapsed_time, moving_time, max_speed, average_speed, elevation_gain, elevation_loss, elevation_low,
+				 elevation_high, average_grade, max_grade, average_watts, calories, kilojoules) %>%
+	filter(!is.na(average_watts) )%>%
+	filter(!is.na(calories))
 
-strava_activities_filter %>%
+
+
+strava_data_filter %>%
 	#	select() %>%
 	skim() %>%
 	view()
 
 plot_scatterplot(
-	strava_activities_filter,
+	strava_data_filter,
 	by = "distance_km", nrow = 6L)
 
-## manual EDA
-strava_activities %>%
-	count(activity_type, activity_gear)
-
-strava_activities %>%
-	filter(is.na(activity_gear)) %>%
-	filter(activity_type == "Ride") %>%
-	count(activity_ymdhms_cet, distance_km)
-## explorer shiny app
-explore(DATA %>%
-					select())
