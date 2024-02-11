@@ -22,12 +22,13 @@ library(ggtext) # helper functions for ggplot text
 library(ggrepel) # helper functions for ggplot text
 
 # load data
-strava_data <- readRDS("data/strava_activities_final.rds")
+strava_data <- readRDS("data/strava_activities_final.rds") %>%
+	mutate(activity_hour2 = activity_hour + 1)
 glimpse(strava_data)
 
 strava_data %>%
 	filter(activity_year == 2023) %>%
-	filter(activity_month >= 10) %>%
+	filter(activity_month == 9) %>%
 	view()
 
 ## summary table
@@ -73,6 +74,7 @@ sumtable <- strava_data %>%
 	mutate(time_max = round(time_max, 0))
 
 glimpse(sumtable)
+saveRDS(sumtable, file = "data/sumtable.rds")
 
 sumtable %>%
 	select(rides, km_total, elev_total, time_total1, time_total2, cal_total, kiloj_total) %>%
@@ -96,7 +98,7 @@ sumtable %>%
 	cols_label(km_avg = "Average", km_med = "Median",
 						 km_min = "Shortest", km_max = "Longest") %>%
 	cols_align(align = "center", columns = everything()) %>%
-	tab_header(title = md("*Ride Statisitcs - Distance (in km)*"))
+	tab_header(title = md("*Ride Statistics - Distance (in km)*"))
 
 sumtable %>%
 	select(time_avg, time_med, time_min, time_max) %>%
@@ -110,54 +112,234 @@ sumtable %>%
 	select(elev_avg, elev_med, elev_min, elev_max) %>%
 	gt() %>%
 	cols_label(elev_avg = "Average", elev_med = "Median",
-						 elev_min = "Shortest", elev_max = "Longest") %>%
+						 elev_min = "Lowest", elev_max = "Highest") %>%
 	cols_align(align = "center", columns = everything()) %>%
 	tab_header(title = md("*Ride Statistics - Elevation (meters)*"))
 
 sumtable %>%
 	select(cal_avg, cal_min, cal_max, kiloj_avg, kiloj_min, kiloj_max) %>%
 	gt() %>%
-	cols_label(cal_avg = "Average", cal_min = "Shortest", cal_max = "Longest",
-						 kiloj_avg = "Average", kiloj_min = "Shortest", kiloj_max = "Longest") %>%
+	cols_label(cal_avg = "Average", cal_min = "Least", cal_max = "Most",
+						 kiloj_avg = "Average", kiloj_min = "Least", kiloj_max = "Most") %>%
 	cols_align(align = "center", columns = everything()) %>%
-	tab_spanner(label = "Calories", columns = c(cal_avg, cal_min, cal_max)) %>%
-	tab_spanner(label = "Kilojoules", columns = c(kiloj_avg, kiloj_min, kiloj_max)) %>%
+	tab_spanner(label = "Calories Burned", columns = c(cal_avg, cal_min, cal_max)) %>%
+	tab_spanner(label = "Kilojoules Burned", columns = c(kiloj_avg, kiloj_min, kiloj_max)) %>%
 	tab_header(title = md("*Ride Statistics - Energy*"))
 
 
 ## bar charts for month, day of the week
-strava_data %>%
+ # by month & type
+rides_mth_type <- strava_data %>%
 	filter(activity_year == 2023) %>%
-	mutate(ride_type = case_when(
-		commute == "TRUE" ~ "Commute/Studieskolen",
-		activity_name %in% c("To Studieskolen", "From Studieskolen",
-												 "To Studieskolen KVUC", "From Studieskolen KVUC")
-		~ "Commute/Studieskolen",
-		gear_name == "Univega" ~ "Workout",
-		TRUE ~ "Other")) %>%
-	count(ride_type, activity_name) %>%
-	view()
 	group_by(activity_month_t, ride_type) %>%
 	summarise(ride_type_n = n()) %>%
 	mutate(ride_type_pct = ride_type_n / sum(ride_type_n)) %>%
 	ungroup() %>%
 	group_by(activity_month_t) %>%
 	mutate(rides_by_month = sum(ride_type_n)) %>%
-	ungroup() %>%
-	view()
+	ungroup()
+saveRDS(rides_mth_type, file = "data/rides_mth_type.rds")
 
-	#	group_by(commute) %>%
-	ggplot(aes(activity_month_t, fill = commute)) +
-	geom_bar() +
-	#geom_bar(fill = "#C8102E") +
-	geom_text(stat = "count", aes(label=after_stat(count)),
-						color = "white", size = 5) +
-	labs(x = "", y = "") +
+## all rides
+# by month
+rides_mth_type %>%
+	distinct(activity_month_t, .keep_all = TRUE) %>%
+	select(activity_month_t, rides_by_month) %>%
+	ggplot(aes(activity_month_t, rides_by_month)) +
+	geom_col(fill = "#C8102E") +
+	geom_text(aes(label= rides_by_month),
+						color = "white", size = 5, vjust = 1.5) +
+	labs(x = "", y = "", title = "Spring & Summer Weather = More Rides",
+			 subtitle = glue::glue("*Average Rides / Month = {round(mean(rides_mth_type$rides_by_month, 3))}*")) +
 	theme_minimal() +
-	theme(panel.grid = element_blank())
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = ggtext::element_markdown(hjust = 0.5),
+				axis.text.y = element_blank())
 
+# by type
+rides_mth_type %>%
+	select(ride_type, ride_type_n) %>%
+	group_by(ride_type) %>%
+	mutate(rides_by_type = sum(ride_type_n)) %>%
+	ungroup() %>%
+	select(-ride_type_n) %>%
+	distinct(rides_by_type, .keep_all = TRUE) %>%
+	mutate(ride_type_pct = rides_by_type / sum(rides_by_type)) %>%
+	{. ->> tmp} %>%
+	ggplot(aes(ride_type, ride_type_pct)) +
+	geom_col(fill = "#C8102E") +
+	scale_x_discrete(labels = paste0(tmp$ride_type, "<br>Total Rides = ", tmp$rides_by_type, "")) +
+	geom_text(data = subset(tmp, ride_type != "Workout"),
+		aes(label= scales::percent(round(ride_type_pct, 2))),
+						color = "white", size = 5, vjust = 1.5) +
+	geom_text(data = subset(tmp, ride_type == "Workout"),
+						aes(label= scales::percent(round(ride_type_pct, 2))),
+						color = "#C8102E", size = 5, vjust = -.5) +
+	labs(x = "", y = "", title = "Lots of Riding to Work or Danish Class") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				axis.text.y = element_blank(), axis.text.x = ggtext::element_markdown())
+	rm(tmp)
+
+#	group_by(commute) %>%
+rides_mth_type %>%
+	ggplot(aes(activity_month_t, ride_type_pct, fill = ride_type)) +
+	geom_bar(stat = "identity") +
+	geom_text(data = subset(rides_mth_type, ride_type != "Workout"),
+						aes(label = scales::percent(round(ride_type_pct, 2))),
+						position = position_stack(vjust = 0.5),
+						color= "white", vjust = 1, size = 5) +
+	labs(x = "", y = "", title = "Most Rides Each Month Were Commutes to/from Work or Danish Class") +
+	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+	theme_minimal()+
+	theme(legend.position = "bottom", legend.spacing.x = unit(0, 'cm'),
+				legend.text = ggtext::element_markdown(),
+				legend.key.width = unit(1.5, 'cm'), legend.title = element_blank(),
+				axis.text.y = element_blank(), plot.title = element_text(hjust = 0.5),
+		panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	guides(fill = guide_legend(label.position = "bottom"))
+
+# day of the week and type
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	group_by(activity_wday) %>%
+	summarise(rides_by_wday = n()) %>%
+	mutate(rides_wday_pct = rides_by_wday / sum(rides_by_wday)) %>%
+	mutate(rides_day_avg = round(mean(rides_by_wday), 0)) %>%
+	ungroup() %>%
+	mutate(total_rides = sum(rides_by_wday)) %>%
+	{. ->> tmp} %>%
+	ggplot(aes(activity_wday, rides_wday_pct)) +
+	geom_col(fill = "#C8102E") +
+	scale_x_discrete(labels = paste0(tmp$activity_wday, "<br>Total Rides = ", tmp$rides_by_wday, "")) +
+	geom_text(aes(label = scales::percent(round(rides_wday_pct, 2))),
+						color = "white", size = 5, vjust = 1.5) +
+	labs(x = "", y = "", title = "More Rides Tuesdays thru Thursdays",
+			 subtitle = glue::glue("*Total Rides = {tmp$total_rides} <br> Average Rides / Day = {tmp$rides_day_avg}*")) +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = ggtext::element_markdown(hjust = 0.5),
+				axis.text.x = ggtext::element_markdown(),
+				axis.text.y = element_blank())
+rm(tmp)
+
+
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	group_by(activity_wday, ride_type) 	%>%
+	summarise(ride_type_n = n()) %>%
+	mutate(ride_type_pct = ride_type_n / sum(ride_type_n)) %>%
+	ungroup() %>%
+	ggplot(aes(activity_wday, ride_type_pct, fill = ride_type)) +
+	geom_bar(stat = "identity") +
+	geom_text(aes(label = scales::percent(round(ride_type_pct, 2))),
+						position = position_stack(vjust = 0.5),
+						color= "white", size = 5) +
+	labs(x = "", y = "", title = "Weekdays Were for Getting to/from Work & Danish Class",
+			 subtitle = "Weekends for Errands and Workouts") +
+	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+	theme_minimal() +
+	theme(legend.position = "bottom", legend.spacing.x = unit(0, 'cm'),
+				legend.text = ggtext::element_markdown(),
+				legend.key.width = unit(1.5, 'cm'), legend.title = element_blank(),
+				axis.text.y = element_blank(),
+				plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_text(hjust = 0.5, size = 14),
+				panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	guides(fill = guide_legend(label.position = "bottom"))
 
 ## clock for time
+# from https://rstudio-pubs-static.s3.amazonaws.com/3369_998f8b2d788e4a0384ae565c4280aa47.html
+
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	count(ride_type, activity_hour) %>%
+	{. ->> tmp} %>%
+	ggplot(aes(activity_hour, y = n, fill = ride_type)) +
+	geom_bar(stat = "identity") +
+	scale_x_continuous(limits = c(0, 24), breaks = seq(0, 24)) +
+	geom_text(data = subset(tmp, ride_type == "Commute/Studieskolen" & n > 20),
+		aes(label= n), color = "white", size = 4) +
+	coord_polar(start = 0) +
+	theme_minimal() +
+	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+	labs(x = "", y = "",
+			 title = "Most Rides During Morning and Evening Commuting Hours",
+			 subtitle = "*Numbers Correspond to Hour of Day on a 24 hr clock*") +
+	theme(legend.text = ggtext::element_markdown(),
+				axis.text.y = element_blank(),
+				legend.title = element_blank(),
+				plot.title = element_text(hjust = 0.5),
+				plot.subtitle = ggtext::element_markdown(hjust = 0.5, size = 10))
+rm(tmp)
+
+glimpse(strava_data)
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	count(activity_min)
+
+activity_am <- strava_data %>%
+	filter(activity_year == 2023) %>%
+	filter(activity_hour < 12) %>%
+	group_by(activity_min) %>%
+	summarise(activity_min_n = n()) %>%
+	mutate(ampm = "AM")
+
+activity_pm <- strava_data %>%
+	filter(activity_year == 2023) %>%
+	filter(activity_hour >= 12) %>%
+	group_by(activity_min) %>%
+	summarise(activity_min_n = n()) %>%
+	mutate(ampm = "PM")
+
+activty_ampm <- activity_am %>%
+	rbind(activity_pm)
+glimpse(activty_ampm)
+saveRDS(activty_ampm, file = "data/activty_ampm.rds")
+
+
+activty_ampm %>%
+	ggplot(aes(activity_min, y = activity_min_n, fill = ampm)) +
+	geom_col(position = position_stack(reverse = TRUE)) +
+	scale_x_continuous(limits = c(-1, 60), breaks = seq(0, 59), labels = seq(0, 59)) +
+	geom_text(data = subset(activty_ampm, activity_min_n > 5),
+						aes(label= activity_min_n), color = "white", size = 4, position = position_nudge(y = -1)) +
+	coord_polar(start = 0) +
+	theme_minimal() +
+	scale_fill_manual(values = c("#E57A77", "#7CA1CC"),
+										labels = c("AM", "PM")) +
+	labs(x = "", y = "",
+			 title = "Most Morning Rides Started Between 12 & 30 Past the Hour <br>
+			 Evening Rides More Evenly Spaced Through the Hour",
+			 subtitle = "*Numbers Correspond to  Minutes of the Hour*") +
+	theme(legend.text = ggtext::element_markdown(),
+				axis.text.y = element_blank(),
+				legend.title = element_blank(),
+				plot.title = ggtext::element_markdown(hjust = 0.5),
+				plot.subtitle = ggtext::element_markdown(hjust = 0.5, size = 10))
+
+
+# strava_data %>%
+# 	filter(activity_year == 2023) %>%
+# 	ggplot(aes(x = activity_hour2, fill = ride_type)) +
+# 	geom_histogram(breaks = seq(0, 24), width = 2, colour = "grey") +
+# 	# stat_count(data = subset(strava_data, ride_type == "Workout"),
+# 	# 	aes(y=..count..,label=..count..),geom="text", vjust = -1) +
+# 	coord_polar(start = 0) +
+# 	theme_minimal() +
+# 	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+# 										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+# 	labs(y = "Count", title = "Most Rides During Morning and Evening Commuting Hours") +
+# 	scale_x_continuous("", limits = c(0, 24),
+# 										 breaks = seq(0, 24),
+# 										 labels = seq(0, 24)) +
+# 	theme(legend.text = ggtext::element_markdown(),
+# 				legend.title = element_blank(),
+# 				plot.title = element_text(hjust = 0.5),
+# 				plot.subtitle = element_text(hjust = 0.5, size = 14))
 
 ## scappterplots
 

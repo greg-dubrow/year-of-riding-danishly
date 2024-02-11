@@ -43,13 +43,15 @@ strava_data %>%
 	arrange(desc(skim_type), complete_rate) %>%
 	view()
 
-## DataExplorer summary of completes, missings
-eda1 <- introduce(strava_data)
-view(eda1)
-
 ## explorer summary
 strava_data %>%
 	describe_tbl()
+
+## DataExplorer summary of completes, missings
+# summary of completes, missings
+introduce(strava_data)
+plot_intro(strava_data)
+plot_missing(strava_data)
 
 ## dataexplorer plots
 plot_bar(strava_data, nrow = 5L)
@@ -70,14 +72,8 @@ strava_data_filter <- strava_data %>%
 	filter(!is.na(average_watts) )%>%
 	filter(!is.na(calories))
 
-
-
-strava_data_filter %>%
-	#	select() %>%
-	skim() %>%
-	view()
-
 plot_scatterplot(
 	strava_data_filter,
 	by = "distance_km", nrow = 6L)
+
 

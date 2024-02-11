@@ -101,9 +101,16 @@ act_data <- compile_activities(myact) %>%
 		"From Studieskolen KVUC", name)) %>%
 	mutate(name = ifelse((commute == "TRUE" & grepl("Ride", name)),
 																str_replace(name, "Ride", "commute"), name)) %>%
+	mutate(ride_type = case_when(
+		commute == "TRUE" ~ "Commute/Studieskolen",
+		name %in% c("To Studieskolen", "From Studieskolen",
+												 "To Studieskolen KVUC", "From Studieskolen KVUC")
+		~ "Commute/Studieskolen",
+		gear_name == "Univega" ~ "Workout",
+		TRUE ~ "Other")) %>%
 	select(activity_id = id, activity_date:activity_wday, activity_hm, activity_hour, activity_min, timezone,
-				 activity_name = name, sport_type, commute, gear_name, gear_id, distance_km = distance, moving_time_hms, moving_time,
-				 elapsed_time_hms, elapsed_time, average_speed, max_speed, average_watts, kilojoules,
+				 activity_name = name, ride_type, sport_type, commute, gear_name, gear_id, distance_km = distance,
+				 moving_time_hms, moving_time, elapsed_time_hms, elapsed_time, average_speed, max_speed, average_watts, kilojoules,
 				 elevation_high = elev_high, elevation_low = elev_low, elevation_gain = total_elevation_gain, location_country,
 				 lat_start = start_latlng1, lng_start = start_latlng2, lat_end = end_latlng1, lng_end = end_latlng2)
 
