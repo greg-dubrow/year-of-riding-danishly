@@ -395,8 +395,8 @@ plot_scatter_lm <- function(data, var1, var2, pointsize = 2, transparency = .5, 
 # average speed as Y "average_grade", "max_grade", "average_watts", "calories", "kilojoules"
 # watts as y - kilojoules, calories
 
-strava_activities_rides <- strava_activities_final %>%
-	filter(sport_type == "Ride")
+strava_activities_rides <- strava_data %>%
+	filter(activity_year == 2023)
 
 # produces each plot as its own image
 map2(
@@ -409,8 +409,8 @@ map2(
 )
 
 # same as above but wraps plots...in qmd put this in r code chunk echo=FALSE, fig.width=15, fig.height=5
-patchwork::wrap_plots(map2(c("elapsed_time", "average_speed","average_watts", "calories", "kilojoules"),
-													 c("distance_km", "average_grade", "distance_km","distance_km","distance_km"),
+patchwork::wrap_plots(map2(c("elapsed_time", "moving_time", "average_speed","average_watts", "calories", "kilojoules"),
+													 c("distance_km", "distance_km", "distance_km", "distance_km", "distance_km", "distance_km"),
 													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
 													 								 #color = "gear_name",
 													 								 pointsize = 3.5) +
