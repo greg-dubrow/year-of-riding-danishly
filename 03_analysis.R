@@ -4,11 +4,13 @@
 library(tidyverse) # to do tidyverse things
 library(tidylog) # to get a log of what's happening to the data
 library(janitor) # tools for data cleaning
-library(gt)
+library(gt) # tables!
+library(ggtext) # ggplot text helpers
 # EDA tools
 library(DataExplorer)
 library(explore)
 library(skimr)
+library(modelsummary)
 
 # some custom functions
 source("~/Data/r/basic functions.R")
@@ -35,17 +37,17 @@ strava_data %>%
 sumtable <- strava_data %>%
 	filter(activity_year == 2023) %>%
 	summarise(rides = n(),
-						km_total = sum(distance_km),
+						km_total = sum(moving_time),
 						time_total_s = sum(moving_time),
 						elev_total = sum(elevation_gain),
 						cal_total = sum(calories),
 						kiloj_total = sum(kilojoules),
-						km_avg = round(mean(distance_km), 2),
-						km_med = round(median(distance_km),2),
-						# km_25th = quantile(distance_km, 0.25),
-						# km_75th = quantile(distance_km, 0.75),
-						km_min = round(min(distance_km),2),
-						km_max = round(max(distance_km),2),
+						km_avg = round(mean(moving_time), 2),
+						km_med = round(median(moving_time),2),
+						# km_25th = quantile(moving_time, 0.25),
+						# km_75th = quantile(moving_time, 0.75),
+						km_min = round(min(moving_time),2),
+						km_max = round(max(moving_time),2),
 						time_avg_s = mean(moving_time),
 						time_med_s = median(moving_time),
 						time_min_s = min(moving_time),
@@ -129,6 +131,7 @@ sumtable %>%
 
 ## bar charts for month, day of the week
  # by month & type
+glimpse(strava_data)
 rides_mth_type <- strava_data %>%
 	filter(activity_year == 2023) %>%
 	group_by(activity_month_t, ride_type) %>%
@@ -137,15 +140,17 @@ rides_mth_type <- strava_data %>%
 	ungroup() %>%
 	group_by(activity_month_t) %>%
 	mutate(rides_by_month = sum(ride_type_n)) %>%
-	ungroup()
+	ungroup() %>%
+	mutate(activity_month_abbv = plyr::mapvalues(activity_month_t, from = month.name, to = month.abb))
+glimpse(rides_mth_type)
 saveRDS(rides_mth_type, file = "data/rides_mth_type.rds")
 
 ## all rides
 # by month
 rides_mth_type %>%
 	distinct(activity_month_t, .keep_all = TRUE) %>%
-	select(activity_month_t, rides_by_month) %>%
-	ggplot(aes(activity_month_t, rides_by_month)) +
+	select(activity_month_abbv, rides_by_month) %>%
+	ggplot(aes(activity_month_abbv, rides_by_month)) +
 	geom_col(fill = "#C8102E") +
 	geom_text(aes(label= rides_by_month),
 						color = "white", size = 5, vjust = 1.5) +
@@ -153,7 +158,7 @@ rides_mth_type %>%
 			 subtitle = glue::glue("*Average Rides / Month = {round(mean(rides_mth_type$rides_by_month, 3))}*")) +
 	theme_minimal() +
 	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
-				plot.subtitle = ggtext::element_markdown(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5),
 				axis.text.y = element_blank())
 
 # by type
@@ -178,7 +183,7 @@ rides_mth_type %>%
 	labs(x = "", y = "", title = "Lots of Riding to Work or Danish Class") +
 	theme_minimal() +
 	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
-				axis.text.y = element_blank(), axis.text.x = ggtext::element_markdown())
+				axis.text.y = element_blank(), axis.text.x = element_markdown())
 	rm(tmp)
 
 #	group_by(commute) %>%
@@ -194,7 +199,7 @@ rides_mth_type %>%
 										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
 	theme_minimal()+
 	theme(legend.position = "bottom", legend.spacing.x = unit(0, 'cm'),
-				legend.text = ggtext::element_markdown(),
+				legend.text = element_markdown(),
 				legend.key.width = unit(1.5, 'cm'), legend.title = element_blank(),
 				axis.text.y = element_blank(), plot.title = element_text(hjust = 0.5),
 		panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
@@ -210,17 +215,17 @@ strava_data %>%
 	ungroup() %>%
 	mutate(total_rides = sum(rides_by_wday)) %>%
 	{. ->> tmp} %>%
-	ggplot(aes(activity_wday, rides_wday_pct)) +
+	ggplot(aes(activity_wday, rides_by_wday)) +
 	geom_col(fill = "#C8102E") +
 	scale_x_discrete(labels = paste0(tmp$activity_wday, "<br>Total Rides = ", tmp$rides_by_wday, "")) +
 	geom_text(aes(label = scales::percent(round(rides_wday_pct, 2))),
 						color = "white", size = 5, vjust = 1.5) +
-	labs(x = "", y = "", title = "More Rides Tuesdays thru Thursdays",
-			 subtitle = glue::glue("*Total Rides = {tmp$total_rides} <br> Average Rides / Day = {tmp$rides_day_avg}*")) +
+	labs(x = "", y = "", title = "More Rides on Weekdays, Especially Tues -> Thurs",
+			 subtitle = glue::glue("*Total Rides = {tmp$total_rides} <br> Average Rides / Day of the Week = {tmp$rides_day_avg}*")) +
 	theme_minimal() +
 	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
-				plot.subtitle = ggtext::element_markdown(hjust = 0.5),
-				axis.text.x = ggtext::element_markdown(),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
 				axis.text.y = element_blank())
 rm(tmp)
 
@@ -242,7 +247,7 @@ strava_data %>%
 										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
 	theme_minimal() +
 	theme(legend.position = "bottom", legend.spacing.x = unit(0, 'cm'),
-				legend.text = ggtext::element_markdown(),
+				legend.text = element_markdown(),
 				legend.key.width = unit(1.5, 'cm'), legend.title = element_blank(),
 				axis.text.y = element_blank(),
 				plot.title = element_text(hjust = 0.5),
@@ -269,11 +274,11 @@ strava_data %>%
 	labs(x = "", y = "",
 			 title = "Most Rides During Morning and Evening Commuting Hours",
 			 subtitle = "*Numbers Correspond to Hour of Day on a 24 hr clock*") +
-	theme(legend.text = ggtext::element_markdown(),
+	theme(legend.text = element_markdown(),
 				axis.text.y = element_blank(),
 				legend.title = element_blank(),
 				plot.title = element_text(hjust = 0.5),
-				plot.subtitle = ggtext::element_markdown(hjust = 0.5, size = 10))
+				plot.subtitle = element_markdown(hjust = 0.5, size = 10))
 rm(tmp)
 
 glimpse(strava_data)
@@ -315,11 +320,11 @@ activty_ampm %>%
 			 title = "Most Morning Rides Started Between 12 & 30 Past the Hour <br>
 			 Evening Rides More Evenly Spaced Through the Hour",
 			 subtitle = "*Numbers Correspond to  Minutes of the Hour*") +
-	theme(legend.text = ggtext::element_markdown(),
+	theme(legend.text = element_markdown(),
 				axis.text.y = element_blank(),
 				legend.title = element_blank(),
-				plot.title = ggtext::element_markdown(hjust = 0.5),
-				plot.subtitle = ggtext::element_markdown(hjust = 0.5, size = 10))
+				plot.title = element_markdown(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5, size = 10))
 
 
 # strava_data %>%
@@ -336,7 +341,7 @@ activty_ampm %>%
 # 	scale_x_continuous("", limits = c(0, 24),
 # 										 breaks = seq(0, 24),
 # 										 labels = seq(0, 24)) +
-# 	theme(legend.text = ggtext::element_markdown(),
+# 	theme(legend.text = element_markdown(),
 # 				legend.title = element_blank(),
 # 				plot.title = element_text(hjust = 0.5),
 # 				plot.subtitle = element_text(hjust = 0.5, size = 14))
@@ -347,7 +352,7 @@ activty_ampm %>%
 # https://www.cedricscherer.com/2023/07/05/efficiency-and-consistency-automate-subset-graphics-with-ggplot2-and-purrr/
 
 ## set up variables of interest
-actnames <- c("distance_km", "elapsed_time", "moving_time", "max_speed", "average_speed", "elevation_gain", "elevation_loss",
+actnames <- c("moving_time", "elapsed_time", "moving_time", "max_speed", "average_speed", "elevation_gain", "elevation_loss",
 							"elevation_low", "elevation_high", "average_grade", "max_grade", "average_watts", "calories", "kilojoules")
 ## ... and create all possible combinations
 actnames_set <- tidyr::expand_grid(actnames, actnames)
@@ -387,40 +392,176 @@ plot_scatter_lm <- function(data, var1, var2, pointsize = 2, transparency = .5, 
 	return(g)
 }
 
-# "distance_km", "elapsed_time", "moving_time", "max_speed", "average_speed", "elevation_gain", "elevation_loss",
+# "moving_time", "elapsed_time", "moving_time", "max_speed", "average_speed", "elevation_gain", "elevation_loss",
 # "elevation_low", "elevation_high", "average_grade", "max_grade", "average_watts", "calories", "kilojoules"
 
 # with distance as Y - elapsed_time, moving_time, average_speed, watts, calories, kilojoules
 # with moving_time as Y average_speed, elevation_gain, average_grade, watts, calories, kilojoules
-# average speed as Y "average_grade", "max_grade", "average_watts", "calories", "kilojoules"
+# average speed as Y elevation_gain, "average_grade",  "max_grade", "average_watts", "calories", "kilojoules"
 # watts as y - kilojoules, calories
 
 strava_activities_rides <- strava_data %>%
 	filter(activity_year == 2023)
 
-# produces each plot as its own image
-map2(
-	c("elapsed_time", "average_speed","average_watts", "calories", "kilojoules"),
-	c("distance_km", "average_grade", "distance_km","distance_km","distance_km"),
-	~plot_scatter_lm(
-		data = strava_activities_rides, var1 = .x, var2 = .y,
-		color = "gear_name", pointsize = 3.5
-	)
-)
-
-# same as above but wraps plots...in qmd put this in r code chunk echo=FALSE, fig.width=15, fig.height=5
+# wraps plots...in qmd put this in r code chunk echo=FALSE, fig.width=15, fig.height=5
 patchwork::wrap_plots(map2(c("elapsed_time", "moving_time", "average_speed","average_watts", "calories", "kilojoules"),
 													 c("distance_km", "distance_km", "distance_km", "distance_km", "distance_km", "distance_km"),
 													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
 													 								 #color = "gear_name",
 													 								 pointsize = 3.5) +
 													 	theme(plot.margin = margin(rep(15, 4)))))
+
+patchwork::wrap_plots(map2(c("average_speed", "elevation_gain", "average_grade", "average_watts", "calories", "kilojoules"),
+													 c("moving_time", "moving_time", "moving_time", "moving_time", "moving_time", "moving_time"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+
+patchwork::wrap_plots(map2(c("elevation_gain", "average_grade", "max_grade", "average_watts", "calories", "kilojoules"),
+													 c("average_speed", "average_speed", "average_speed", "average_speed", "average_speed", "average_speed"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+
+patchwork::wrap_plots(map2(c("kilojoules"),
+													 c("average_watts"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+
+
 # in qmd file add this below
 # <figcaption>text here </figcaption>
 
-pmap(
-	actnames_set, ~plot_scatter_lm(
-		data = strava_data_filter,
-		var1 = .x, var2 = .y
-	)
-)
+
+
+
+## Regression model with moving time as dependent variable
+# "moving_time", "elapsed_time", "moving_time", "max_speed", "average_speed", "elevation_gain", "elevation_loss",
+# "elevation_low", "elevation_high", "average_grade", "max_grade", "average_watts", "calories", "kilojoules"
+
+strava_data %>%
+	count(ride_type)
+
+strava_models <- strava_data %>%
+	filter(activity_year == 2023) %>%
+	mutate(bike_type = ifelse(gear_name == "Commute bike", 1, 0)) %>%
+	mutate(is_workout = ifelse(ride_type == "Workout", 1, 0))
+
+strava_models %>%
+	count(bike_type)
+
+
+model_time <- lm(data = strava_activities_rides, formula =
+							moving_time ~ distance_km +average_speed + elevation_gain + average_grade + average_watts)
+
+model_time$coefficients
+model_time_summary <- modelsummary(model_time)
+
+glimpse(strava_activities_rides)
+
+ride_models <- list(
+	"time" = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
+							data = strava_models),
+	"watts" = lm(average_watts ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+							 data = strava_models),
+	"kilojoules" = lm(kilojoules ~ moving_time + average_speed + elevation_gain + average_grade + average_watts,
+											data = strava_models))
+modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log")
+modelplot(ride_models, coef_omit = "Interc")
+car::vif(ride_models$time)
+colin_time <- stack(car::vif(ride_models$time))
+gt(colin_time)
+car::vif(ride_models$watts)
+car::vif(ride_models$kilojoules)
+
+model_time = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
+								data = strava_models)
+modelsummary(model_time)
+car::vif(model_time)
+model_watts = lm(average_watts ~ distance_km + average_speed + elevation_gain + average_grade + kilojoules,
+						 data = strava_models)
+car::vif(model_watts)
+
+model_kilojoules = lm(kilojoules ~ moving_time + average_speed + elevation_gain + average_grade + average_watts,
+									data = strava_models)
+car::vif(model_kilojoules)
+
+## redo with comparison models colinearity removed
+ride_models <- list(
+	"time" = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
+							data = strava_models),
+	"watts" = lm(average_watts ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+							 data = strava_models),
+	"watts2" = lm(average_watts ~ distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+								data = strava_models),
+	"kilojoules" = lm(kilojoules ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + average_watts,
+										data = strava_models),
+	"kilojoules2" = lm(kilojoules ~ moving_time + average_speed + elevation_gain + average_grade + average_watts,
+										 data = strava_models))
+modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log")
+
+# Plot actual v predicted
+# create dataframes with actual and predicted values
+ride_models_time <- data.frame(Predicted = predict(ride_models$time),
+															 Observed = strava_models$moving_time)
+ride_models_watts <- data.frame(Predicted = predict(ride_models$watts2),
+															 Observed = strava_models$average_watts)
+ride_models_joules <- data.frame(Predicted = predict(ride_models$kilojoules2),
+																Observed = strava_models$kilojoules)
+
+
+# plot predicted values and actual values
+ggplot(ride_models_time, aes(x = Predicted, y = Observed)) +
+	geom_point() +
+	geom_smooth() +
+#	geom_line(aes(y = Predicted), linetype = 2, color = "blue") +
+	labs(title = "Predicted vs Observed - Time Model") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+
+	ggplot(ride_models_watts, aes(x = Predicted, y = Observed)) +
+	geom_point() +
+	geom_smooth() +
+	#	geom_line(aes(y = Predicted), linetype = 2, color = "blue") +
+	labs(title = "Predicted vs Observed - Watts Model") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+
+ggplot(ride_models_joules, aes(x = Predicted, y = Observed)) +
+	geom_point() +
+	geom_smooth() +
+	#	geom_line(aes(y = Predicted), linetype = 2, color = "blue") +
+	labs(title = "Predicted vs Observed - Kilojoules Model") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+
+###### code not needed
+# pmap(
+# 	actnames_set, ~plot_scatter_lm(
+# 		data = strava_data_filter,
+# 		var1 = .x, var2 = .y
+# 	)
+# )
+#
+# # produces each plot as its own image
+# map2(
+# 	c("elapsed_time", "average_speed","average_watts", "calories", "kilojoules"),
+# 	c("moving_time", "average_grade", "moving_time","moving_time","moving_time"),
+# 	~plot_scatter_lm(
+# 		data = strava_activities_rides, var1 = .x, var2 = .y,
+# 		color = "gear_name", pointsize = 3.5
+# 	)
+# )

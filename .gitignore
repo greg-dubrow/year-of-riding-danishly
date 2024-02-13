@@ -12,8 +12,11 @@ post draft text
 strava_activities_from_csv.rds
 strava_activities_final.rds
 data/strava_activities_final.rds
-index.qmd
+*.qmd
 data/*.rds
 images/
 *.html
 index_files/
+index2_files/
+
+*.png
