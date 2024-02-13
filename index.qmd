@@ -1,0 +1,790 @@
+---
+title: "Year of Riding Danishly"
+author: "gregers kjerulf dubrow"
+date: '2024-02-12'
+categories: [post, news, rstats, bicycle, denmark]
+image: "~/Data/r/year of riding danishly/images/bike_dragor.jpeg"
+editor: 
+  mode: source
+---
+
+Test qmd doc for project. Eventually this will be the index file for the actual post.
+
+![My Univega bike enjoying the view at Dragør](~/Data/r/year of riding danishly/images/bike_dragor.jpeg){fig-align="left" fig-alt="red road bicyle on a hill overlooking a bay."}
+
+[Introduction]{.underline} <br>
+
+I like playing with data and I like riding bikes, so here's a post where I look at my own cycling data from the Strava app. In putting this together I learned a bunch of new things, which I'll explain as I go. These new things include:
+
+-   Getting data from my profile section on the Strava webpage and from the Strava API via the `rStrava` package.
+-   Getting `gt` tables to render next to each other by using div classes to create columns.
+-   Using functional programming to make it a bit easier to render multiple plots.
+-   Using a `{. ->> tmp}` call to pipe in a temporary dataframe within a data transformation -> ggplot sequence, and call `rm(tmp)` to remove it from the workflow.
+-   Using the `modelsummary` and `car` packages to visualize regression model output and plot predicted vs observed values. 
+
+So follow along as I load & clean the data, do some exploratory analysis, and see what factors might explain certain outcomes of my rides. 
+
+[My Life with Bikes]{.underline} <br>
+
+Ever since I was a young boy I've loved riding bicycles. My first bike was a birthday present when I was 8 or 9 years old...a yellow and black road runner bike with a banana seat, coaster brakes, similar to [this one here](https://www.worthpoint.com/worthopedia/vintage-iverson-road-runner-20-boys-293307633). I rode that thing for many years. In 10th grade I saved money from various jobs to get a Panasonic 12-speed. I rode that through grad school, and for some reason didn't take it with me to Miami. Thought it likely would have been the bike that got stolen instead of the bike I bought there.
+
+In San Francisco I bought a used red Univega road bike, and loved that so much I had it shipped to France and then here to Denmark.
+
+Among the many things I was looking forward to when moving back to Copenhagen was finally living in a city with great bicycle infrastructure and culture. After all, US bicycle advocacy organizations like the SF Bike Coalition constantly use Copenhagen and Amsterdam as model cities when pushing for improvements to cycling infrastructure. San Francisco is good, but bike infrastructure here in Denmark has much better support from the government, leading to a much more deeply ingrained bike culture.  
+
+According to statistics compiled by [Visit Denmark](https://www.visitdenmark.com/press/latest-news/facts-and-figures-cycling-denmark) via the Copenhagen Municipality, [The Cycling Embassy of Denmark](https://cyclingsolutions.info/embassy/danish-cycling-statistics/), [DTU Center for Transport Analytics](https://www.cta.man.dtu.dk/Transportvaneundersoegelsen/Udgivelser) and [The Ministry of Transportation](https://www.trm.dk/nyheder/2021/aftale-om-520-millioner-kroner-til-fremme-af-cyklisme-paa-plads/), Copenhagen has more than 380 km of bike lanes. Copenhageners cycle on average 3 km per day, and 8 million km per year.
+
+Soon after getting settled one of the first things I did was get myself a good commuter bike to go with the Univega. I found this refursbished beauty at Buddah Bikes in Norrebro.
+
+
+
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "images/",
+  out.width = "100%") 
+```
+
+```{r pkgload}
+#| message: false 
+#| echo: true
+
+library(tidyverse) # to do tidyverse things
+library(tidylog) # to get a log of what's happening to the data
+library(janitor) # tools for data cleaning
+# EDA tools
+library(skimr)
+library(DataExplorer) 
+# analysis tools
+library(gt) # for making tables
+library(ggtext) # to help make ggplot text look good
+library(patchwork) # to combine plots
+library(modelsummary) # for regression outputs
+
+
+```
+
+
+```{r dataload, message=FALSE, ECHO = FALSE, include = FALSE}
+#| message: false
+#| echo: false
+#| include: false
+
+#| warning: false 
+#| error: false
+
+## quietly loads RDS already created
+strava_data <- readRDS("~/Data/r/year of riding danishly/data/strava_activities_final.rds") 
+sumtable <- readRDS("~/Data/r/year of riding danishly/data/sumtable.rds") 
+rides_mth_type <- readRDS("~/Data/r/year of riding danishly/data/rides_mth_type.rds") 
+activty_ampm <- readRDS("~/Data/r/year of riding danishly/data/activty_ampm.rds") 
+```
+
+EDA with `DataExplorer`
+
+```{r eda1, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+## DataExplorer for EDA
+
+# summary of completes, missings
+introduce(strava_data)
+```
+
+EDA 2 with dataexplorer
+
+::: {.grid}
+::: {.g-col-6}
+
+```{r eda2l, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 5.0
+#| fig.height: 5.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+plot_intro(strava_data)
+```
+:::
+::: {.g-col-6}
+
+```{r eda2r, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 5.0
+#| fig.height: 5.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+plot_missing(strava_data)
+```
+:::
+::: 
+
+ dataexplorer correlations
+
+```{r eda3, echo=FALSE, error=FALSE, message=FALSE, out.width="80%"}
+#| fig.width: 6.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+strava_data %>%
+	select(distance_km, elapsed_time, moving_time, max_speed, average_speed, elevation_gain, elevation_loss, elevation_low,
+				 elevation_high, average_grade, max_grade, average_watts, calories, kilojoules) %>%
+	filter(!is.na(average_watts)) %>%
+	filter(!is.na(calories)) %>%
+	plot_correlation(maxcat = 5L, type = "continuous", geom_text_args = list("size" = 4))
+
+```
+
+
+scatterplots - y axis is distance
+using automated plot with function to have more flexibililty to compare various combinations
+data explorer limits to one y axis per call, so since I would have had to repet used automation
+based on [cedric schere's post](https://www.cedricscherer.com/2023/07/05/efficiency-and-consistency-automate-subset-graphics-with-ggplot2-and-purrr/)
+
+```{r scatterplots1, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+## plot template as function
+plot_scatter_lm <- function(data, var1, var2, pointsize = 2, transparency = .5, color = "") {
+
+	## check if inputs are valid
+	if (!exists(substitute(data))) stop("data needs to be a data frame.")
+	if (!is.data.frame(data)) stop("data needs to be a data frame.")
+	if (!is.numeric(pull(data[var1]))) stop("Column var1 needs to be of type numeric, passed as string.")
+	if (!is.numeric(pull(data[var2]))) stop("Column var2 needs to be of type numeric, passed as string.")
+	if (!is.numeric(pointsize)) stop("pointsize needs to be of type numeric.")
+	if (!is.numeric(transparency)) stop("transparency needs to be of type numeric.")
+	if (color != "") { if (!color %in% names(data)) stop("Column color needs to be a column of data, passed as string.") }
+
+	g <-
+		ggplot(data, aes(x = !!sym(var1), y = !!sym(var2))) +
+		geom_point(aes(color = !!sym(color)), size = pointsize, alpha = transparency) +
+		geom_smooth(aes(color = !!sym(color), color = after_scale(prismatic::clr_darken(color, .3))),
+								method = "lm", se = FALSE) +
+		theme_minimal() +
+		theme(panel.grid.minor = element_blank(),
+					legend.position = "top")
+
+	if (color != "") {
+		if (is.numeric(pull(data[color]))) {
+			g <- g + scale_color_viridis_c(direction = -1, end = .85) +
+				guides(color = guide_colorbar(
+					barwidth = unit(12, "lines"), barheight = unit(.6, "lines"), title.position = "top"
+				))
+		} else {
+			g <- g + scale_color_brewer(palette = "Set2")
+		}
+	}
+
+	return(g)
+}
+
+## data extract
+strava_activities_rides <- strava_data %>%
+	filter(activity_year == 2023)
+
+## 1st plot call - distance as y axis
+patchwork::wrap_plots(map2(c("elapsed_time", "moving_time", "average_speed","average_watts", "calories", "kilojoules"),
+													 c("distance_km", "distance_km", "distance_km", "distance_km", "distance_km", "distance_km"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+
+```
+# in qmd file add this below
+# <figcaption>text here </figcaption>
+
+Scatterplots 2 moving_time in y axis
+
+```{r scatterplots2, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+patchwork::wrap_plots(map2(c("average_speed", "elevation_gain", "average_grade", "average_watts", "calories", "kilojoules"),
+													 c("moving_time", "moving_time", "moving_time", "moving_time", "moving_time", "moving_time"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+
+
+```
+
+scatterplots 3 avverafge speed in y axis
+
+```{r scatterplots3, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+patchwork::wrap_plots(map2(c("elevation_gain", "average_grade", "max_grade", "average_watts", "calories", "kilojoules"),
+													 c("average_speed", "average_speed", "average_speed", "average_speed", "average_speed", "average_speed"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+
+
+```
+
+watts by kilojoules
+
+```{r scatterplots4, echo=FALSE, error=FALSE, message=FALSE, out.width="50%"}
+#| fig.width: 4.0
+#| fig.height: 2.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+patchwork::wrap_plots(map2(c("kilojoules"),
+													 c("average_watts"),
+													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
+													 								 #color = "gear_name",
+													 								 pointsize = 3.5) +
+													 	theme(plot.margin = margin(rep(15, 4)))))
+```
+
+
+Analysis Pt 1 - `gt` tables
+
+Table 1 summary
+```{r gttables1, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+sumtable %>%
+	select(rides, km_total, elev_total, time_total1, time_total2, cal_total, kiloj_total) %>%
+	gt() %>%
+	fmt_number(columns = c(km_total, elev_total, cal_total, kiloj_total), decimals = 0) %>%
+	cols_label(rides = "Total Rides", km_total = "Total Kilometers",
+						 elev_total = md("Total Elevation *(meters)*"),
+						 time_total1 = md("Total Time *(hours/min/sec)*"),
+						 time_total2 = md("Total Time *(days/hours/min/sec)*"),
+						 cal_total = "Total Calories", kiloj_total = "Total Kilojoules") %>%
+	cols_align(align = "center", columns = everything()) %>%
+	tab_style(
+		style = cell_text(align = "center"),
+		locations = cells_column_labels(
+			columns = c(rides, km_total, elev_total, time_total1, time_total2, cal_total, kiloj_total))) %>%
+	tab_header(title = md("My Year of Riding Danishly<br>*Ride Totals*"))
+```
+
+Table 2 & 3 Distance & Time
+
+::: {.grid}
+::: {.g-col-6}
+
+```{r gttables2l, echo=FALSE, error=FALSE, message=FALSE}
+
+sumtable %>%
+	select(km_avg, km_med, km_min, km_max) %>%
+	gt() %>%
+	cols_label(km_avg = "Average", km_med = "Median",
+						 km_min = "Shortest", km_max = "Longest") %>%
+	cols_align(align = "center", columns = everything()) %>%
+	tab_header(title = md("*Ride Statistics - Distance (in km)*"))
+```
+
+:::
+::: {.g-col-6}
+
+```{r gttables2r, echo=FALSE, error=FALSE, message=FALSE}
+sumtable %>%
+	select(time_avg, time_med, time_min, time_max) %>%
+	gt() %>%
+	cols_label(time_avg = "Average", time_med = "Median",
+						 time_min = "Shortest", time_max = "Longest") %>%
+	cols_align(align = "center", columns = everything()) %>%
+	tab_header(title = md("*Ride Statistics - Time*")) 
+```
+:::
+:::  
+
+Tables 3 & 4 Elevation & Energy
+
+::: {.grid}
+::: {.g-col-6}
+```{r gttables3l, echo=FALSE, error=FALSE, message=FALSE}
+
+sumtable %>%
+	select(elev_avg, elev_med, elev_min, elev_max) %>%
+	gt() %>%
+	cols_label(elev_avg = "Average", elev_med = "Median",
+						 elev_min = "Lowest", elev_max = "Highest") %>%
+	cols_align(align = "center", columns = everything()) %>%
+	tab_header(title = md("*Ride Statistics - Elevation (meters)*"))
+```
+:::
+::: {.g-col-6}
+
+```{r gttables3r, echo=FALSE, error=FALSE, message=FALSE}
+
+sumtable %>%
+	select(cal_avg, cal_min, cal_max, kiloj_avg, kiloj_min, kiloj_max) %>%
+	gt() %>%
+	cols_label(cal_avg = "Average", cal_min = "Least", cal_max = "Most",
+						 kiloj_avg = "Average", kiloj_min = "Least", kiloj_max = "Most") %>%
+	cols_align(align = "center", columns = everything()) %>%
+	tab_spanner(label = "Calories Burned", columns = c(cal_avg, cal_min, cal_max)) %>%
+	tab_spanner(label = "Kilojoules Burned", columns = c(kiloj_avg, kiloj_min, kiloj_max)) %>%
+	tab_header(title = md("*Ride Statistics - Energy*"))
+```
+:::
+:::
+
+
+Charts with ggplot
+```{r charts1, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+## all rides
+# by month
+
+ridesplot1 <-
+rides_mth_type %>%
+	distinct(activity_month_t, .keep_all = TRUE) %>%
+	select(activity_month_abbv, rides_by_month) %>%
+	ggplot(aes(activity_month_abbv, rides_by_month)) +
+	geom_col(fill = "#C8102E") +
+	geom_text(aes(label= rides_by_month),
+						color = "white", size = 5, vjust = 1.5) +
+	labs(x = "", y = "", title = "Spring & Summer Weather = More Rides",
+			 subtitle = glue::glue("*Average Rides / Month = {round(mean(rides_mth_type$rides_by_month, 3))}*")) +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.y = element_blank())
+
+
+# by type
+ridesplot2 <-
+rides_mth_type %>%
+	select(ride_type, ride_type_n) %>%
+	group_by(ride_type) %>%
+	mutate(rides_by_type = sum(ride_type_n)) %>%
+	ungroup() %>%
+	select(-ride_type_n) %>%
+	distinct(rides_by_type, .keep_all = TRUE) %>%
+	mutate(ride_type_pct = rides_by_type / sum(rides_by_type)) %>%
+	{. ->> tmp} %>%
+	ggplot(aes(ride_type, ride_type_pct)) +
+	geom_col(fill = "#C8102E") +
+	scale_x_discrete(labels = paste0(tmp$ride_type, "<br>Total Rides = ", tmp$rides_by_type, "")) +
+	geom_text(data = subset(tmp, ride_type != "Workout"),
+		aes(label= scales::percent(round(ride_type_pct, 2))),
+						color = "white", size = 5, vjust = 1.5) +
+	geom_text(data = subset(tmp, ride_type == "Workout"),
+						aes(label= scales::percent(round(ride_type_pct, 2))),
+						color = "#C8102E", size = 5, vjust = -.5) +
+	labs(x = "", y = "", title = "Lots of Riding to Work or Danish Class") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				axis.text.y = element_blank(), axis.text.x = element_markdown())
+	rm(tmp)
+	
+ridesplot1 + ridesplot2 
+```
+
+
+```{r charts2, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 5.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+#	group_by(commute) %>%
+rides_mth_type %>%
+	ggplot(aes(activity_month_t, ride_type_pct, fill = ride_type)) +
+	geom_bar(stat = "identity") +
+	geom_text(data = subset(rides_mth_type, ride_type != "Workout"),
+						aes(label = scales::percent(round(ride_type_pct, 2))),
+						position = position_stack(vjust = 0.5),
+						color= "white", vjust = 1, size = 5) +
+	labs(x = "", y = "", title = "Most Rides Each Month Were Commutes to/from Work or Danish Class") +
+	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+	theme_minimal()+
+	theme(legend.position = "bottom", legend.spacing.x = unit(0, 'cm'),
+				legend.text = element_markdown(),
+				legend.key.width = unit(1.5, 'cm'), legend.title = element_blank(),
+				axis.text.y = element_blank(), plot.title = element_text(hjust = 0.5),
+		panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	guides(fill = guide_legend(label.position = "bottom"))
+```
+
+```{r charts3, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+# day of the week and type
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	group_by(activity_wday) %>%
+	summarise(rides_by_wday = n()) %>%
+	mutate(rides_wday_pct = rides_by_wday / sum(rides_by_wday)) %>%
+	mutate(rides_day_avg = round(mean(rides_by_wday), 0)) %>%
+	ungroup() %>%
+	mutate(total_rides = sum(rides_by_wday)) %>%
+	{. ->> tmp} %>%
+	ggplot(aes(activity_wday, rides_by_wday)) +
+	geom_col(fill = "#C8102E") +
+	scale_x_discrete(labels = paste0(tmp$activity_wday, "<br>Total Rides = ", tmp$rides_by_wday, "")) +
+	geom_text(aes(label = scales::percent(round(rides_wday_pct, 2))),
+						color = "white", size = 5, vjust = 1.5) +
+	labs(x = "", y = "", title = "More Rides on Weekdays, Especially Tues -> Thurs",
+			 subtitle = glue::glue("*Total Rides = {tmp$total_rides} <br> Average Rides / Day of the Week = {tmp$rides_day_avg}*")) +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+rm(tmp)
+```
+
+```{r charts4, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 5.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	group_by(activity_wday, ride_type) 	%>%
+	summarise(ride_type_n = n()) %>%
+	mutate(ride_type_pct = ride_type_n / sum(ride_type_n)) %>%
+	ungroup() %>%
+	ggplot(aes(activity_wday, ride_type_pct, fill = ride_type)) +
+	geom_bar(stat = "identity") +
+	geom_text(aes(label = scales::percent(round(ride_type_pct, 2))),
+						position = position_stack(vjust = 0.5),
+						color= "white", size = 5) +
+	labs(x = "", y = "", title = "Weekdays Were for Getting to/from Work & Danish Class",
+			 subtitle = "Weekends for Errands and Workouts") +
+	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+	theme_minimal() +
+	theme(legend.position = "bottom", legend.spacing.x = unit(0, 'cm'),
+				legend.text = element_markdown(),
+				legend.key.width = unit(1.5, 'cm'), legend.title = element_blank(),
+				axis.text.y = element_blank(),
+				plot.title = element_text(hjust = 0.5),
+				plot.subtitle = element_text(hjust = 0.5, size = 14),
+				panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	guides(fill = guide_legend(label.position = "bottom"))
+
+## clock for time
+# from https://rstudio-pubs-static.s3.amazonaws.com/3369_998f8b2d788e4a0384ae565c4280aa47.html
+```
+
+```{r charts5, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+strava_data %>%
+	filter(activity_year == 2023) %>%
+	count(ride_type, activity_hour) %>%
+	{. ->> tmp} %>%
+	ggplot(aes(activity_hour, y = n, fill = ride_type)) +
+	geom_bar(stat = "identity") +
+	scale_x_continuous(limits = c(0, 24), breaks = seq(0, 24)) +
+	geom_text(data = subset(tmp, ride_type == "Commute/Studieskolen" & n > 20),
+		aes(label= n), color = "white", size = 4) +
+	coord_polar(start = 0) +
+	theme_minimal() +
+	scale_fill_manual(values = c("#0072B2", "#E69F00", "#CC79A7"),
+										labels = c("Commute/<br>Studieskolen", "Other", "Workout")) +
+	labs(x = "", y = "",
+			 title = "Most Rides During Morning and Evening Commuting Hours",
+			 subtitle = "*Numbers Correspond to Hour of Day on a 24 hr clock*") +
+	theme(legend.text = element_markdown(),
+				axis.text.y = element_blank(),
+				legend.title = element_blank(),
+				plot.title = element_text(size = 10, hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5, size = 9))
+rm(tmp)
+
+activty_ampm %>%
+	ggplot(aes(activity_min, y = activity_min_n, fill = ampm)) +
+	geom_col(position = position_stack(reverse = TRUE)) +
+	scale_x_continuous(limits = c(-1, 60), breaks = seq(0, 59), labels = seq(0, 59)) +
+	geom_text(data = subset(activty_ampm, activity_min_n > 5),
+						aes(label= activity_min_n), color = "white", size = 4, position = position_nudge(y = -1)) +
+	coord_polar(start = 0) +
+	theme_minimal() +
+	scale_fill_manual(values = c("#E57A77", "#7CA1CC"),
+										labels = c("AM", "PM")) +
+	labs(x = "", y = "",
+			 title = "Most Morning Rides Started Between 12 & 30 Past the Hour <br>
+			 Evening Rides More Evenly Spaced Through the Hour",
+			 subtitle = "*Numbers Correspond to  Minutes of the Hour*") +
+	theme(legend.text = element_markdown(),
+				axis.text.y = element_blank(),
+				legend.title = element_blank(),
+				plot.title = element_markdown(size = 10, hjust = 0.5),
+				plot.subtitle = element_markdown(hjust = 0.5, size = 9))
+
+```
+
+Regression model with moving time as dependent variable
+
+
+Table 1 summary
+```{r regression1, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+strava_models <- strava_data %>%
+	filter(activity_year == 2023) 
+
+ride_models <- list(
+	"time" = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
+							data = strava_models),
+	"watts" = lm(average_watts ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+							 data = strava_models),
+	"kilojoules" = lm(kilojoules ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + average_watts,
+											data = strava_models))
+modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log")
+modelplot(ride_models, coef_omit = "Interc")
+
+
+```
+
+
+::: {.grid}
+::: {.g-col-4}
+
+```{r regression2, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+
+colin_time <- stack(car::vif(ride_models$time))
+colin_watts <- stack(car::vif(ride_models$watts))
+colin_joules <- stack(car::vif(ride_models$kilojoules))
+
+colin_time %>%
+	gt() %>%
+	tab_header(title = "Colinearity - Time Model")
+```
+:::
+::: {.g-col-4}
+
+```{r regression3, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+colin_watts %>%
+	gt() %>%
+	tab_header(title = "Colinearity - Watts Model")
+```
+:::
+::: {.g-col-4}
+
+```{r regression4, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+colin_joules %>%
+	gt() %>%
+	tab_header(title = "Colinearity - Kilojoules Model")
+```
+
+:::
+::: 
+
+Redo models removing the variables with most colinearity. Won't run the plot of estimates as they didn't chnage significantly enough
+
+```{r regression5, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+ride_models <- list(
+	"time" = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
+							data = strava_models),
+	"watts" = lm(average_watts ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+							 data = strava_models),
+	"watts2" = lm(average_watts ~ distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+							 data = strava_models),
+	"kilojoules" = lm(kilojoules ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + average_watts,
+											data = strava_models),
+  "kilojoules2" = lm(kilojoules ~ moving_time + average_speed + elevation_gain + average_grade + average_watts,
+											data = strava_models))
+modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log")
+
+```
+
+
+predicted vs actual
+
+Predicted v observed values - create dataframes
+
+```{r regression6, echo=FALSE, error=FALSE, message=FALSE}
+#| fig.width: 8.0
+#| fig.height: 6.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+ride_models_time <- data.frame(Predicted = predict(ride_models$time),
+															 Observed = strava_models$moving_time)
+ride_models_watts <- data.frame(Predicted = predict(ride_models$watts2),
+															 Observed = strava_models$average_watts)
+ride_models_joules <- data.frame(Predicted = predict(ride_models$kilojoules2),
+																Observed = strava_models$kilojoules)
+
+```
+
+render plots
+
+::: {.grid}
+::: {.g-col-6}
+
+```{r regression7, echo=FALSE, error=FALSE, message=FALSE, out.width="95%"}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+# plot predicted values and actual values
+ggplot(ride_models_time, aes(x = Predicted, y = Observed)) +
+	geom_point() +
+	geom_smooth() +
+#	geom_line(aes(y = Predicted), linetype = 2, color = "blue") +
+	labs(title = "Predicted vs Observed - Time Model") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5, size = 22),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+
+	ggplot(ride_models_watts, aes(x = Predicted, y = Observed)) +
+	geom_point() +
+	geom_smooth() +
+	#	geom_line(aes(y = Predicted), linetype = 2, color = "blue") +
+	labs(title = "Predicted vs Observed - Watts Model") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5, size = 22),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+```
+
+:::
+::: {.g-col-6}
+
+```{r regression8, echo=FALSE, error=FALSE, message=FALSE, out.width="95%"}
+#| fig.width: 7.5
+#| fig.height: 4.0
+#| fig-dpi: 300
+#| warning: false
+#| message: false 
+#| error: false
+#| echo: false
+
+ggplot(ride_models_joules, aes(x = Predicted, y = Observed)) +
+	geom_point() +
+	geom_smooth() +
+	#	geom_line(aes(y = Predicted), linetype = 2, color = "blue") +
+	labs(title = "Predicted vs Observed - Kilojoules Model") +
+	theme_minimal() +
+	theme(panel.grid = element_blank(), plot.title = element_text(hjust = 0.5, , size = 22),
+				plot.subtitle = element_markdown(hjust = 0.5),
+				axis.text.x = element_markdown(),
+				axis.text.y = element_blank())
+```
+
+Some explanatory text here
+
+:::
+::: 
+
+conclusion
