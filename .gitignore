@@ -16,6 +16,6 @@ index2.qmd
 data/*.rds
 images/
 *.html
-index_files/
+index_draft_files/
 index2_files/
 *.png

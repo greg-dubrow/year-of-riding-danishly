@@ -16,6 +16,7 @@ library(lubridate)
 
 stoken <- httr::config(token = readRDS('.httr-oauth')[[1]])
 
+
 myinfo <- get_athlete(stoken, id = '45999365')
 head(myinfo)
 
