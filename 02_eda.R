@@ -21,6 +21,7 @@ library(ggrepel) # helper functions for ggplot text
 
 # load data
 strava_data <- readRDS("data/strava_activities_final.rds")
+strava_data <- readRDS("~/Data/r/year of riding danishly/data/strava_activities_final.rds")
 glimpse(strava_data)
 
 strava_data %>%
@@ -53,6 +54,14 @@ introduce(strava_data)
 plot_intro(strava_data)
 plot_missing(strava_data)
 
+library(patchwork)
+library(DataExplorer)
+
+plintro <- plot_intro(strava_data)
+plmiss <- plot_missing(strava_data)
+
+plintro + plmiss
+
 ## dataexplorer plots
 plot_bar(strava_data, nrow = 5L)
 plot_histogram(strava_data, nrow = 5L)
@@ -76,4 +85,5 @@ plot_scatterplot(
 	strava_data_filter,
 	by = "distance_km", nrow = 6L)
 
+ggsave("images/scatterplot_de.png", dpi = 300)
 

@@ -28,6 +28,10 @@ strava_data <- readRDS("data/strava_activities_final.rds") %>%
 	mutate(activity_hour2 = activity_hour + 1)
 glimpse(strava_data)
 
+## if not in wd
+strava_data <- readRDS("~/Data/r/year of riding danishly/data/strava_activities_final.rds") %>%
+	mutate(activity_hour2 = activity_hour + 1)
+
 strava_data %>%
 	filter(activity_year == 2023) %>%
 	filter(activity_month == 9) %>%
@@ -78,6 +82,8 @@ sumtable <- strava_data %>%
 glimpse(sumtable)
 saveRDS(sumtable, file = "data/sumtable.rds")
 
+sumtable <- readRDS("~/Data/r/year of riding danishly/data/sumtable.rds")
+
 sumtable %>%
 	select(rides, km_total, elev_total, time_total1, time_total2, cal_total, kiloj_total) %>%
 	gt() %>%
@@ -88,6 +94,8 @@ sumtable %>%
 						 time_total2 = md("Total Time *(days/hours/min/sec)*"),
 						 cal_total = "Total Calories", kiloj_total = "Total Kilojoules") %>%
 	cols_align(align = "center", columns = everything()) %>%
+	tab_style(style = cell_fill(color = "grey"),
+						locations = cells_body(rows = seq(1, 1, 1))) %>%
 	tab_style(
 		style = cell_text(align = "center"),
 		locations = cells_column_labels(
@@ -414,14 +422,14 @@ patchwork::wrap_plots(map2(c("elapsed_time", "moving_time", "average_speed","ave
 patchwork::wrap_plots(map2(c("average_speed", "elevation_gain", "average_grade", "average_watts", "calories", "kilojoules"),
 													 c("moving_time", "moving_time", "moving_time", "moving_time", "moving_time", "moving_time"),
 													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
-													 								 #color = "gear_name",
+													 								 #color = "ride_type",
 													 								 pointsize = 3.5) +
 													 	theme(plot.margin = margin(rep(15, 4)))))
 
 patchwork::wrap_plots(map2(c("elevation_gain", "average_grade", "max_grade", "average_watts", "calories", "kilojoules"),
 													 c("average_speed", "average_speed", "average_speed", "average_speed", "average_speed", "average_speed"),
 													 ~plot_scatter_lm(data = strava_activities_rides, var1 = .x, var2 = .y,
-													 								 #color = "gear_name",
+													 								# color = "ride_type",
 													 								 pointsize = 3.5) +
 													 	theme(plot.margin = margin(rep(15, 4)))))
 
@@ -464,13 +472,26 @@ model_time_summary <- modelsummary(model_time)
 glimpse(strava_activities_rides)
 
 ride_models <- list(
-	"time" = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
+	"Time" = lm(moving_time ~ distance_km + average_speed + elevation_gain + average_grade + average_watts,
 							data = strava_models),
-	"watts" = lm(average_watts ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + kilojoules,
+	"Watts" = lm(average_watts ~ moving_time + distance_km +average_speed + elevation_gain + average_grade + kilojoules,
 							 data = strava_models),
-	"kilojoules" = lm(kilojoules ~ moving_time + average_speed + elevation_gain + average_grade + average_watts,
+	"Kilojoules" = lm(kilojoules ~ moving_time + average_speed + elevation_gain + average_grade + average_watts,
 											data = strava_models))
-modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log")
+
+# this outputs with shaded rows
+modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log", output = "gt")
+
+# don't need this afterall
+modelsum1 <- modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log", output = "gt")
+modelsum1 %>%
+	tab_style(style = cell_fill(color = 'lightgrey'),
+					locations = cells_body(rows = c(1,3,5,7,9,11,13,15,17))) %>%
+	cols_label("Time" = md("**Time**"),
+						 "Watts" = md("**Watts**"),
+						 "Kilojoules" = md("**Kilojoules**"))
+
+
 modelplot(ride_models, coef_omit = "Interc")
 car::vif(ride_models$time)
 colin_time <- stack(car::vif(ride_models$time))
@@ -507,11 +528,16 @@ modelsummary(ride_models, stars = TRUE, gof_omit = "IC|Adj|F|RMSE|Log")
 # Plot actual v predicted
 # create dataframes with actual and predicted values
 ride_models_time <- data.frame(Predicted = predict(ride_models$time),
-															 Observed = strava_models$moving_time)
+															 Observed = strava_models$moving_time,
+															 Residual = residuals(ride_models$time))
 ride_models_watts <- data.frame(Predicted = predict(ride_models$watts2),
-															 Observed = strava_models$average_watts)
+															 Observed = strava_models$average_watts,
+															 Residual = residuals(ride_models$watts2))
 ride_models_joules <- data.frame(Predicted = predict(ride_models$kilojoules2),
-																Observed = strava_models$kilojoules)
+																Observed = strava_models$kilojoules,
+																Residual = residuals(ride_models$kilojoules2))
+
+ride_models$time$residuals
 
 
 # plot predicted values and actual values
@@ -547,6 +573,181 @@ ggplot(ride_models_joules, aes(x = Predicted, y = Observed)) +
 				plot.subtitle = element_markdown(hjust = 0.5),
 				axis.text.x = element_markdown(),
 				axis.text.y = element_blank())
+
+## plot residuals
+ # create data set - time model
+ride_models_time_df <- as_tibble(ride_models$time$model) %>%
+	mutate(moving_time_hms = hms::hms(moving_time)) %>%
+	mutate(moving_time_hms = hms::round_hms(moving_time_hms, digits = 0)) %>%
+	mutate(moving_time_hms_dtm = as.POSIXct(moving_time_hms, format = "%H:%M")) %>%
+	#	mutate(moving_time_hms2 = lubridate::hms(moving_time_hms)) %>%
+	#	mutate(moving_time_hms3 = chron::times(moving_time_hms)) %>%
+	#	mutate(moving_time_hms4 = fmt_hms(moving_time_hms)) %>%
+	cbind(ride_models$time$fitted.values) %>%
+	cbind(ride_models$time$residuals) %>%
+	rename(moving_time_pred = `ride_models$time$fitted.values`,
+				 moving_time_resid = `ride_models$time$residuals`) %>%
+	mutate(moving_time_pred_hms = hms::hms(moving_time_pred)) %>%
+	mutate(moving_time_pred_hms = hms::round_hms(moving_time_pred_hms, digits = 0)) %>%
+	mutate(moving_time_pred_hms_dtm = as.POSIXct(moving_time_pred_hms, format = "%H:%M")) %>%
+	mutate(moving_time_resid_hms = hms::hms(moving_time_resid)) %>%
+	mutate(moving_time_resid_hms = hms::round_hms(moving_time_resid_hms, digits = 0)) %>%
+	mutate(moving_time_resid_hms_dtm = as.POSIXct(moving_time_resid_hms, format = "%H:%M")) %>%
+	mutate(ride_time_grp = case_when(moving_time <=900 ~ "0-15min",
+																	 between(moving_time, 901, 1800) ~ "+15-30min",
+																	 between(moving_time, 1801, 3600) ~ "+30min-1hr",
+																	 between(moving_time, 3601, 7200) ~ "+1hr-2hrs",
+																	 moving_time > 7200 ~ "+2hrs")) %>%
+	mutate(ride_time_grp = factor(
+		ride_time_grp,
+		levels = c("0-15min", "+15-30min", "+30min-1hr","+1hr-2hrs","+2hrs"))) %>%
+	mutate(ride_time_grp2 = case_when(moving_time <=720 ~ "0-12min",
+																	 between(moving_time, 721, 900) ~ "+12-15min",
+																	 between(moving_time, 901, 1800) ~ "+15-30min",
+																	 between(moving_time, 1801, 3600) ~ "+30min-1hr",
+																	 between(moving_time, 3601, 7200) ~ "+1hr-2hrs",
+																	 moving_time > 7200 ~ "+2hrs")) %>%
+	mutate(ride_time_grp2 = factor(
+		ride_time_grp2,
+		levels = c("0-12min", "+12-15min", "+15-30min", "+30min-1hr","+1hr-2hrs","+2hrs")))
+
+glimpse(ride_models_time_df)
+
+ride_models_time_df %>%
+	count(ride_time_grp, ride_time_grp2)
+
+ride_models_time_df %>%
+	group_by(ride_time_grp) %>%
+	summarise(rides_n = n(),
+		residual_mean = mean(moving_time_resid)) %>%
+	mutate(residual_mean = hms::hms(residual_mean)) %>%
+	mutate(residual_mean = hms::round_hms(residual_mean, digits = 0)) %>%
+	gt() %>%
+	cols_label(ride_time_grp = "Ride-Time Group", rides_n = "# of Rides",
+						 residual_mean = md("Avg Residual<br>*(H/M/S)*")) %>%
+	cols_align(align = "left", columns = ride_time_grp) %>%
+	cols_align(align = "right", columns = residual_mean) %>%
+	tab_style(style = cell_fill(color = "lightgrey"), locations = cells_body(rows = c(2, 4))) %>%
+	tab_header(title = md("*Average Residual Ride Time by Ride Time Group*"),
+						 subtitle = md("*Residual = Actual - Predicted; >0 = under-prediction, <0 = over-prediction*"))
+
+ride_models_time_df %>%
+	ggplot(aes(x=moving_time_hms_dtm, y=moving_time_resid_hms)) +
+	geom_point() +
+	geom_smooth() +
+	scale_x_datetime(breaks = scales::breaks_width("15 min"),labels=scales::date_format("%H:%M")) +
+	labs(title = "Slight under-prediction of ride-time for rides of fewer than 30 minutes",
+			 subtitle = "*Residual = Actual - Predicted; >0 = under-prediction, <0 = over-prediction*",
+		x = "Moving time - actual (H/M/S)", y = "Moving time - residual (H/M/S)") +
+	theme_minimal() +
+	theme(panel.grid.minor = element_blank(),
+		plot.title = element_text(hjust = 0.5, size = 22),
+				plot.subtitle = element_markdown(),
+				axis.text.x = element_markdown())
+
+# create data set - watts
+ride_models_watts_df <- as_tibble(ride_models$watts$model) %>%
+	cbind(ride_models$watts2$fitted.values) %>%
+	cbind(ride_models$watts2$residuals) %>%
+	rename(watts_pred = `ride_models$watts2$fitted.values`,
+				 watts_resid = `ride_models$watts2$residuals`) %>%
+	mutate(moving_time_hms = hms::hms(moving_time)) %>%
+	mutate(moving_time_hms = hms::round_hms(moving_time_hms, digits = 0)) %>%
+	mutate(moving_time_hms_dtm = as.POSIXct(moving_time_hms, format = "%H:%M")) %>%
+	mutate(ride_time_grp = case_when(moving_time <=900 ~ "0-15min",
+																	 between(moving_time, 901, 1800) ~ "+15-30min",
+																	 between(moving_time, 1801, 3600) ~ "+30min-1hr",
+																	 between(moving_time, 3601, 7200) ~ "+1hr-2hrs",
+																	 moving_time > 7200 ~ "+2hrs")) %>%
+	mutate(ride_time_grp = factor(
+		ride_time_grp,
+		levels = c("0-15min", "+15-30min", "+30min-1hr","+1hr-2hrs","+2hrs")))
+
+glimpse(ride_models_watts_df)
+
+ride_models_watts_df %>%
+	group_by(ride_time_grp) %>%
+	summarise(rides_n = n(),
+						residual_mean = mean(watts_resid)) %>%
+	gt() %>%
+	cols_label(ride_time_grp = "Ride-Time Group", rides_n = "# of Rides",
+						 residual_mean = md("Avg Residual")) %>%
+	cols_align(align = "left", columns = ride_time_grp) %>%
+	cols_align(align = "right", columns = residual_mean) %>%
+	tab_header(title = md("*Average Residual Watts by Ride Time Group*"),
+						 subtitle = md("*Residual = Actual - Predicted; >0 = under-prediction, <0 = over-prediction*"))
+
+ride_models_watts_df %>%
+	ggplot(aes(x=average_watts, y=watts_resid)) +
+	geom_point() +
+	geom_smooth() +
+	labs(title = "Model over-predicts for output to ~140, then starts to under-predict",
+			 subtitle = "*Residual = Actual - Predicted; >0 = under-prediction, <0 = over-prediction*",
+			 x = "Watts - actual", y = "Watts - residual") +
+	theme_minimal() +
+	theme(panel.grid.minor = element_blank(),
+				plot.title = element_text(hjust = 0.5, size = 12),
+				plot.subtitle = element_markdown(),
+				axis.text.x = element_markdown())
+
+
+# create data set - kilojoules
+ride_models_kjoules_df <- as_tibble(ride_models$kilojoules$model) %>%
+	cbind(ride_models$kilojoules2$fitted.values) %>%
+	cbind(ride_models$kilojoules2$residuals) %>%
+	rename(kjoules_pred = `ride_models$kilojoules2$fitted.values`,
+				 kjoules_resid = `ride_models$kilojoules2$residuals`) %>%
+	mutate(moving_time_hms = hms::hms(moving_time)) %>%
+	mutate(moving_time_hms = hms::round_hms(moving_time_hms, digits = 0)) %>%
+	mutate(moving_time_hms_dtm = as.POSIXct(moving_time_hms, format = "%H:%M")) %>%
+	mutate(ride_time_grp = case_when(moving_time <=900 ~ "0-15min",
+																	 between(moving_time, 901, 1800) ~ "+15-30min",
+																	 between(moving_time, 1801, 3600) ~ "+30min-1hr",
+																	 between(moving_time, 3601, 7200) ~ "+1hr-2hrs",
+																	 moving_time > 7200 ~ "+2hrs")) %>%
+	mutate(ride_time_grp = factor(
+		ride_time_grp,
+		levels = c("0-15min", "+15-30min", "+30min-1hr","+1hr-2hrs","+2hrs"))) %>%
+	mutate(kjoule_grp = case_when(kilojoules <= 125 ~ "0-125",
+																between(kilojoules, 125.1, 250) ~ "126-250",
+																between(kilojoules, 251.1, 500) ~ "251-500",
+																kilojoules > 500 ~ "> 500")) %>%
+	mutate(kjoule_grp = factor(
+		kjoule_grp, levels = c("0-125", "126-250", "251-500", "> 500")))
+
+glimpse(ride_models_kjoules_df)
+
+ride_models_kjoules_df %>%
+	count(kjoule_grp)
+
+ride_models_kjoules_df %>%
+	group_by(kjoule_grp) %>%
+	summarise(rides_n = n(),
+						residual_mean = mean(kjoules_resid)) %>%
+	gt() %>%
+	cols_label(kjoule_grp = "Kilojoule Group", rides_n = "# of Rides",
+						 residual_mean = md("Avg Residual")) %>%
+	cols_align(align = "left", columns = kjoule_grp) %>%
+	cols_align(align = "right", columns = residual_mean) %>%
+	tab_style(style = cell_fill(color = "lightgrey"), locations = cells_body(rows = c(2, 4))) %>%
+	tab_header(title = md("*Average Residual Kilojoules by Kilojoule Group*"),
+						 subtitle = md("*Residual = Actual - Predicted; >0 = under-prediction, <0 = over-prediction*"))
+
+ride_models_kjoules_df %>%
+	ggplot(aes(x=kilojoules, y=kjoules_resid)) +
+	geom_point() +
+	geom_smooth() +
+	labs(title = "Model starts to under-predicts at ~125; slight over-prediction until then",
+			 subtitle = "*Residual = Actual - Predicted; >0 = under-prediction, <0 = over-prediction*",
+			 x = "Kilojoules - actual", y = "Kilojoules - residual") +
+	theme_minimal() +
+	theme(panel.grid.minor = element_blank(),
+				plot.title = element_text(hjust = 0.5, size = 12),
+				plot.subtitle = element_markdown(),
+				axis.text.x = element_markdown())
+
+
+
 
 ###### code not needed
 # pmap(
